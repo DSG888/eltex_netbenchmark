@@ -101,7 +101,7 @@ void* server_worker_multi_tcp(void *threadArgs) {
 	#ifdef SELECT
 		fd_set readfds;	//cpFIX readfds
 	#elif POLL
-		struct pollfd* Set = malloc(sizeof(struct pollfd) * srv_sock_thr->num); //FIXME malloc
+		struct pollfd* Set = malloc(sizeof(struct pollfd) * srv_sock_thr->num);
 	#endif
 	while (1) {
 		// Если нечего обрабатывать, то спать
@@ -109,6 +109,8 @@ void* server_worker_multi_tcp(void *threadArgs) {
 			sleep(1);
 			continue;
 		}
+		#ifndef EPOLL
+		// Инициализация списка дескрипторов. Для EPOLL не требуется
 		for (int i = 0, c = 0; i < srv_sock_thr->num; ++i) {
 			if (srv_sock_thr->allsock[i] != -1) {
 				#ifdef SELECT
@@ -122,6 +124,7 @@ void* server_worker_multi_tcp(void *threadArgs) {
 			if (c >= srv_sock_thr->cou)
 				break;
 		}
+		#endif
 		
 		
 		#ifdef SELECT
@@ -136,6 +139,14 @@ void* server_worker_multi_tcp(void *threadArgs) {
 		for (int i = 0; i < srv_sock_thr->cou; ++i) {
 			if (Set[i].revents & POLLIN) {
 				int sock = Set[i].fd;
+		#elif EPOLL
+		struct epoll_event Events[MAX_EVENTS];
+		int N = epoll_wait(srv_sock_thr->EPoll, Events, MAX_EVENTS, 1);
+		
+		//printf("Reg\n");
+		for (int i = 0; i < N; ++i) {
+			int sock = Events[i].data.fd;
+			{
 		#endif
 				uint16_t recvsize = 0;
 				char buf[sizeof(DATA) + 10] = {'\0'};

@@ -51,7 +51,6 @@ int main(int argc, char * argv[]) {
 		sigaction(SIGALRM, &act, NULL);
 		
 		fprintf(stdout, "Прослушивание: %s:%d\n", inet_ntoa(out_ip), port);
-	//	int client_count = 0;
 		int sock_t = create_server_tcp_socket(out_ip.s_addr, port);
 		int sock_u = create_server_udp_socket(out_ip.s_addr, port, 1);
 		
@@ -61,16 +60,20 @@ int main(int argc, char * argv[]) {
 		timerval.it_interval.tv_sec = 1;
 		setitimer(ITIMER_REAL, &timerval, 0);	// Установка самого таймера
 		
-		#ifndef PTHREAD
 		// Создание и инициализация глобального массива дескрипторов
+		#ifndef PTHREAD
+		// Установка ограничений
 		#ifdef SELECT
-		const uint32_t dsize = SOCK_PER_TH * numcpu;
-		#else
-		const uint32_t dsize = POLL_SIZE;
+			const uint32_t dsize = SOCK_PER_TH * numcpu;
+		#elif POLL
+			const uint32_t dsize = POLL_SIZE;
 		#endif
+		
+		#ifndef EPOLL
 		int* allsocks = malloc(sizeof(int) * dsize);
 		for (uint16_t i = 0; i < dsize; ++i)
 			allsocks[i] = -1;
+		#endif
 		srv_sock_thr_t* srv_sock_thr_arr = malloc(sizeof(srv_sock_thr_t) * numcpu);
 		if (!srv_sock_thr_arr)
 			DieWithError("malloc thr_struct\n");
@@ -79,13 +82,16 @@ int main(int argc, char * argv[]) {
 			#ifdef SELECT
 				srv_sock_thr_arr[i].num = SOCK_PER_TH;
 				srv_sock_thr_arr[i].allsock = allsocks + i * SOCK_PER_TH;
-			#else
+			#elif POLL
 				const uint16_t items_per_th = dsize / numcpu;
 				const uint16_t left = i * items_per_th;
 				const uint16_t right = (i == numcpu - 1)?(dsize - 1):(left + items_per_th - 1);
 				const uint16_t count = right - left + 1;
 				srv_sock_thr_arr[i].num = count;
 				srv_sock_thr_arr[i].allsock = allsocks + left;
+			#elif EPOLL
+				srv_sock_thr_arr[i].EPoll = epoll_create1(0);
+				srv_sock_thr_arr[i].MasterSocket = sock_t;
 			#endif
 			srv_sock_thr_arr[i].cou = 0;
 			srv_sock_thr_arr[i].maxdx = -1;
@@ -107,12 +113,12 @@ int main(int argc, char * argv[]) {
 				newconnect = malloc(sizeof(connect_node_t));
 				if (!newconnect)
 					DieWithError("memerror");
-				newconnect->num = client_count++;
+		//		newconnect->num = client_count++;
 				//fprintf(stdout, " Жду подключения\n");
 				newconnect->sock = accept_tcp_connection(sock_t);
 				if ((newconnect->client_threadID = pthread_create(&newconnect->client_threadID, NULL, server_worker_tcp, (void*)newconnect)) < 0)
 					DieWithError("\npthread_create() failed");
-				ll_add_tail(threadlist, newconnect);
+		//		ll_add_tail(threadlist, newconnect);
 			}
 		#elif SELECT
 			printf(" Обработка на selectах\n");
@@ -232,6 +238,85 @@ int main(int argc, char * argv[]) {
 			}
 		#elif EPOLL
 			printf(" Обработка на epoll\n");
+			struct epoll_event event1, event2;
+			
+			int epolld = epoll_create1(0);	// Задание дескриптора
+			
+			event1.data.fd = sock_t;
+			event2.data.fd = sock_u;
+			event1.events = EPOLLIN;	// отслеживание доступности на чтение
+			event2.events = EPOLLIN;	// отслеживание доступности на чтение
+			epoll_ctl(epolld, EPOLL_CTL_ADD, sock_t, &event1);	// Регистрация TCP сокета
+			epoll_ctl(epolld, EPOLL_CTL_ADD, sock_u, &event2);	// Регистрация UDP сокета
+			
+			
+			while (1) {
+				//struct epoll_event events[MAX_EVENTS];
+				//uint8_t N = epoll_wait(epolld, events, MAX_EVENTS, -1);
+				//for (uint8_t i = 0; i < N; ++i) {
+					
+				//}
+				struct epoll_event events[2];
+				int epollsize = epoll_wait(epolld, events, 2, -1);
+				for (int i = 0; i < epollsize; ++i) {
+					if (events[i].data.fd == sock_t) {
+						// Пришел TCP клиент
+						int newsock = accept_tcp_connection(sock_t);
+						// Попытка сунуть дескриптор в поток
+						for (int i = 0; i < numcpu; ++i) {
+							// Распределение между потоками
+							if (0) {
+						//	if (srv_sock_thr_arr[tc].num <= srv_sock_thr_arr[tc].cou + 1) {
+						//		if (++tc >= numcpu)
+						//			tc = 0;
+						//		continue;
+							}
+							else {
+						//		for (int j = 0; j < srv_sock_thr_arr[tc].num; ++j) {
+						//			// Находим в потоке свободный дескриптор
+						//	//		if (srv_sock_thr_arr[tc].allsock[j] == -1) {
+						//	//			srv_sock_thr_arr[tc].allsock[j] = newsock;
+						//	{			if (srv_sock_thr_arr[tc].maxdx < newsock)
+						//					srv_sock_thr_arr[tc].maxdx = newsock;
+						//				newsock = 0;
+						//				srv_sock_thr_arr[tc].cou++;
+						//				break;
+						//			}
+						//		}
+								struct epoll_event Event;
+								set_nonblock(newsock);
+								Event.data.fd = newsock;
+								Event.events = EPOLLIN;
+								epoll_ctl(srv_sock_thr_arr[tc].EPoll, EPOLL_CTL_ADD, newsock, &Event);
+								newsock = 0;
+								srv_sock_thr_arr[tc].maxdx = 1;	//Костыль
+								if (++tc >= numcpu)
+									tc = 0;
+								if (!newsock)
+									break;
+							}
+						}
+						if (newsock) {
+							fprintf(stderr, "Дескриптор клиента потерян\n");
+							++errors;
+						}//FIXME копия кода выше
+					}
+					if (events[i].data.fd == sock_u) {
+						// Прием UDP прямо здесь
+						char data[sizeof(DATA) + 10] = {'\0'};
+						if ((recv(sock_u, &data, sizeof(DATA), 0)) != sizeof(DATA) || strcmp(DATA, data)) {
+							++errors;
+							continue;
+						}
+						else {
+							++udp_counter;
+							udp_data += sizeof(DATA);
+						}//FIXME Копия кода выше
+					}
+				}
+			}
+			
+			
 		#else
 			printf("Ошибка. Нет заданного обработчика\n");
 		#endif

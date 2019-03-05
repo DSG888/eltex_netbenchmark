@@ -30,12 +30,14 @@
 
 #ifdef SELECT
 	#define SOCK_PER_TH	1024	// Число сокетов на один поток
-#else
-	#ifdef POLL
-		#include <poll.h>
-	#endif
+#elif POLL
+	#include <poll.h>
 	#define POLL_SIZE	2048	// Общее число сокетов
+#elif EPOLL
+	#include <sys/epoll.h>
+	#define MAX_EVENTS 32
 #endif
+
 
 
 

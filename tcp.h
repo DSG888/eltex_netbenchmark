@@ -26,9 +26,13 @@ void* server_worker_multi_tcp(void *threadArgs);
 struct srv_sock_thr_s {
 	uint16_t num;	// Общее число дескрипторов, которые отданы потоку
 	uint16_t cou;	// Число занятых дескрипторов
-	int* allsock;	// Указатель на первый дескриптор для этого потока
 	int maxdx;		// Максимальный дескриптор
 	pthread_t threadID;
+	#ifdef EPOLL
+	int MasterSocket, EPoll;
+	#else
+	int* allsock;	// Указатель на первый дескриптор для этого потока
+	#endif
 } typedef srv_sock_thr_t;
 //#endif
 
