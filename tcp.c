@@ -143,7 +143,6 @@ void* server_worker_multi_tcp(void *threadArgs) {
 		struct epoll_event Events[MAX_EVENTS];
 		int N = epoll_wait(srv_sock_thr->EPoll, Events, MAX_EVENTS, 1);
 		
-		//printf("Reg\n");
 		for (int i = 0; i < N; ++i) {
 			int sock = Events[i].data.fd;
 			{
@@ -181,11 +180,9 @@ void* client_handler_tcp(void *threadArgs) {
 		//fprintf(stdout, " Подключение к %s:%d\t", inet_ntoa(ip), ((struct main_handler_args_s*)threadArgs)->port);
 		int sock = client_tcp_connect(((struct main_handler_args_s*)threadArgs)->ip, ((struct main_handler_args_s*)threadArgs)->port);
 		if (0 > sock) {
-			//fprintf(stdout, "[FAIL]\n");
 			//sleep(3);
 			continue;
 		}
-		//fprintf(stdout, "[ОК]\n");
 		// Получение строки
 		while (1) {
 			if ((send(sock, DATA, sizeof(DATA), 0)) !=  sizeof(DATA)) { 

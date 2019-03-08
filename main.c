@@ -251,11 +251,6 @@ int main(int argc, char * argv[]) {
 			
 			
 			while (1) {
-				//struct epoll_event events[MAX_EVENTS];
-				//uint8_t N = epoll_wait(epolld, events, MAX_EVENTS, -1);
-				//for (uint8_t i = 0; i < N; ++i) {
-					
-				//}
 				struct epoll_event events[2];
 				int epollsize = epoll_wait(epolld, events, 2, -1);
 				for (int i = 0; i < epollsize; ++i) {
